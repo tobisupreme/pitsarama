@@ -5,14 +5,8 @@ const orderModel = require('../models/orderModel')
  */
 const getOrdersInfo = async (req, res, next) => {
   try {
-    // check for authenticated user
-    const authenticatedUser = req.authenticatedUser
-
-    if (!authenticatedUser) {
-      return res.status(403).send({ message: 'Forbidden' })
-    }
-
-    if (authenticatedUser.role !== 'admin') {
+    // check for authenticated user's role
+    if (req.authenticatedUser.role !== 'admin') {
       return res.status(401).send({ message: 'Unauthorised' })
     }
 
@@ -35,29 +29,55 @@ const getOrdersInfo = async (req, res, next) => {
  */
 const getAllOrders = async (req, res, next) => {
   try {
-    // check for authenticated user
-    const authenticatedUser = req.authenticatedUser
+    let orders, returnObject = {}
+    
+    /**
+     * check for query parameters
+     */
+    // Pagination
+    let limitFromQuery = parseInt(req.query.limit)
+    let pageFromQuery = parseInt(req.query.page)
 
-    if (!authenticatedUser) {
-      return res.status(403).send({ message: 'Forbidden' })
-    }
-
-    let orders
-
-    // check for query parameters
+    let limit = 5, page = 1 // default values
+    if (!isNaN(limitFromQuery) && limitFromQuery > 0) limit = limitFromQuery
+    
+    const numberOfOrders = await orderModel.find({}).countDocuments().exec()
+    const totalPages = Math.ceil(numberOfOrders / limit)
+    if (!isNaN(pageFromQuery) && pageFromQuery <= totalPages ) page = pageFromQuery
+    
+    const start = (page - 1) * limit
+    const end = page * limit
+    
+    // Sort by total_price/createdAt
     const { price, date } = req.query
 
     if (price) {
       const value = price === 'asc' ? 1 : price === 'desc' ? -1 : false
-      if (value) orders = await orderModel.find({}).sort({ total_price: value })
+      if (value) orders = await orderModel.find({}).sort({ total_price: value }).limit(limit).skip(start)
     } else if (date) {
       const value = date === 'asc' ? 1 : date === 'desc' ? -1 : false
-      console.log(value, '<-- value')
-      if (value) orders = await orderModel.find({}).sort({ created_at: value })
+      if (value) orders = await orderModel.find({}).sort({ created_at: value }).limit(limit).skip(start)
     }
-    if (!orders) orders = await orderModel.find({})
+    if (!orders) orders = await orderModel.find({}).limit(limit).skip(start)
 
-    return res.json({ status: true, orders })
+    // prepare response data
+    if (start > 0) {
+      returnObject.previousPage = {
+        page: page - 1,
+        limit: limit,
+      }
+    }
+    returnObject.currentPage = page
+    if (end < numberOfOrders) {
+      returnObject.nextPage = {
+        page: page + 1,
+        limit: limit,
+      }
+    }
+    returnObject.totalPages = totalPages
+    returnObject.orders = orders
+
+    return res.json({ status: true, data: returnObject })
   } catch (err) {
     next(err)
   }
@@ -68,19 +88,12 @@ const getAllOrders = async (req, res, next) => {
  */
 const getOrderById = async (req, res, next) => {
   try {
-    // check for authenticated user
-    const authenticatedUser = req.authenticatedUser
-
-    if (!authenticatedUser) {
-      return res.status(403).send({ message: 'Forbidden' })
-    }
-
     const { orderId } = req.params
     const order = await orderModel.findById(orderId)
     if (!order) {
-      return res.status(404).json({ status: false, order: null })
+      return res.status(404).json({ status: false, data: null })
     }
-    return res.json({ status: true, order })
+    return res.json({ status: true, data: order })
   } catch (err) {
     next(err)
   }
@@ -91,13 +104,6 @@ const getOrderById = async (req, res, next) => {
  */
 const createOrder = async (req, res, next) => {
   try {
-    // check for authenticated user
-    const authenticatedUser = req.authenticatedUser
-
-    if (!authenticatedUser) {
-      return res.status(403).send({ message: 'Forbidden' })
-    }
-
     const body = req.body
 
     const total_price = body.items.reduce((prev, curr) => {
@@ -114,7 +120,7 @@ const createOrder = async (req, res, next) => {
     order
       .save()
       .then((result) => {
-        return res.status(201).json({ status: true, result })
+        return res.status(201).json({ status: true, data: result })
       })
       .catch((err) => {
         res.status(500)
@@ -131,14 +137,8 @@ const createOrder = async (req, res, next) => {
  */
 const updateOrder = async (req, res, next) => {
   try {
-    // check for authenticated user
-    const authenticatedUser = req.authenticatedUser
-
-    if (!authenticatedUser) {
-      return res.status(403).send({ message: 'Forbidden' })
-    }
-
-    if (authenticatedUser.role !== 'admin') {
+    // check for authenticated user's role
+    if (req.authenticatedUser.role !== 'admin') {
       return res.status(401).send({ message: 'Unauthorised' })
     }
 
@@ -148,18 +148,18 @@ const updateOrder = async (req, res, next) => {
     const order = await orderModel.findById(id)
 
     if (!order) {
-      return res.status(404).json({ status: false, order: null })
+      return res.status(404).json({ status: false, data: null })
     }
 
     if (state < order.state) {
-      return res.status(422).json({ status: false, order: null, message: 'Invalid operation' })
+      return res.status(422).json({ status: false, data: null, message: 'Invalid operation' })
     }
 
     order.state = state
 
     await order.save()
 
-    return res.json({ status: true, order })
+    return res.json({ status: true, data: order })
   } catch (err) {
     console.log(err)
     next(err)
@@ -171,14 +171,8 @@ const updateOrder = async (req, res, next) => {
  */
 const deleteOrder = async (req, res, next) => {
   try {
-    // check for authenticated user
-    const authenticatedUser = req.authenticatedUser
-
-    if (!authenticatedUser) {
-      return res.status(403).send({ message: 'Forbidden' })
-    }
-
-    if (authenticatedUser.role !== 'admin') {
+    // check for authenticated user's role
+    if (req.authenticatedUser.role !== 'admin') {
       return res.status(401).send({ message: 'Unauthorised' })
     }
 
