@@ -1,16 +1,17 @@
 const express = require('express')
 const router = express.Router()
-const orderModel = require('../models/orderModel')
-const authenticate = require('../middleware/authenticate')
 const controller = require('../controllers/orderController')
+const getToken = require('../middleware/getToken')
+const getUser = require('../middleware/getUser')
+const authorize = require('../middleware/authorize')
+const checkId = require('../middleware/checkId')
 
-router.use(authenticate)
-
+router.use(getToken, getUser)
 /**
  * Get information about all orders
  */
 router.route('/info')
-  .get(controller.getOrdersInfo)
+  .get(authorize, controller.getOrdersInfo)
 
 /**
  * Get all orders
@@ -22,18 +23,13 @@ router.route('/')
   .post(controller.createOrder)
 
 /**
- * Get order by id
- */
-router.route('/:orderId')
-  .get(controller.getOrderById)
-
-/**
- * Update order state
- * &&
+ * Get order by id,
+ * Update order state and
  * Delete order by ID
  */
 router.route('/:id')
-  .patch(controller.updateOrder)
-  .delete(controller.deleteOrder)
+  .get(checkId, controller.getOrderById)
+  .patch(authorize, controller.updateOrder)
+  .delete(checkId, controller.deleteOrder)
 
 module.exports = router

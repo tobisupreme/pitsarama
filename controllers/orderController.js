@@ -1,16 +1,11 @@
-const orderModel = require('../models/orderModel')
+const Order = require('../models/orderModel')
 
 /**
  * Get information about all orders
  */
 const getOrdersInfo = async (req, res, next) => {
   try {
-    // check for authenticated user's role
-    if (req.authenticatedUser.role !== 'admin') {
-      return res.status(401).send({ message: 'Unauthorised' })
-    }
-
-    const orders = await orderModel.find({})
+    const orders = await Order.find({})
     const resObj = {}
     resObj.numberOfOrders = orders.length
     resObj.states = orders.reduce((obj, x) => {
@@ -30,7 +25,7 @@ const getOrdersInfo = async (req, res, next) => {
 const getAllOrders = async (req, res, next) => {
   try {
     let orders, returnObject = {}
-    
+    const filter = req.authenticatedUser.user_type === 'admin' ? {} : { user: req.authenticatedUser._id }
     /**
      * check for query parameters
      */
@@ -40,25 +35,25 @@ const getAllOrders = async (req, res, next) => {
 
     let limit = 5, page = 1 // default values
     if (!isNaN(limitFromQuery) && limitFromQuery > 0) limit = limitFromQuery
-    
-    const numberOfOrders = await orderModel.find({}).countDocuments().exec()
+
+    const numberOfOrders = await Order.find(filter).countDocuments().exec()
     const totalPages = Math.ceil(numberOfOrders / limit)
     if (!isNaN(pageFromQuery) && pageFromQuery <= totalPages ) page = pageFromQuery
-    
+
     const start = (page - 1) * limit
     const end = page * limit
-    
+
     // Sort by total_price/createdAt
     const { price, date } = req.query
 
     if (price) {
       const value = price === 'asc' ? 1 : price === 'desc' ? -1 : false
-      if (value) orders = await orderModel.find({}).sort({ total_price: value }).limit(limit).skip(start)
+      if (value) orders = await Order.find(filter).populate('user', { username: 1 }).sort({ total_price: value }).limit(limit).skip(start)
     } else if (date) {
       const value = date === 'asc' ? 1 : date === 'desc' ? -1 : false
-      if (value) orders = await orderModel.find({}).sort({ created_at: value }).limit(limit).skip(start)
+      if (value) orders = await Order.find(filter).populate('user', { username: 1 }).sort({ created_at: value }).limit(limit).skip(start)
     }
-    if (!orders) orders = await orderModel.find({}).limit(limit).skip(start)
+    if (!orders) orders = await Order.find(filter).populate('user', { username: 1 }).limit(limit).skip(start)
 
     // prepare response data
     if (start > 0) {
@@ -88,8 +83,8 @@ const getAllOrders = async (req, res, next) => {
  */
 const getOrderById = async (req, res, next) => {
   try {
-    const { orderId } = req.params
-    const order = await orderModel.findById(orderId)
+    const { id } = req.params
+    const order = await Order.findById(id)
     if (!order) {
       return res.status(404).json({ status: false, data: null })
     }
@@ -105,6 +100,7 @@ const getOrderById = async (req, res, next) => {
 const createOrder = async (req, res, next) => {
   try {
     const body = req.body
+    const user = req.authenticatedUser
 
     const total_price = body.items.reduce((prev, curr) => {
       return (prev += curr.quantity * curr.price)
@@ -114,19 +110,16 @@ const createOrder = async (req, res, next) => {
       items: body.items,
       created_at: new Date(),
       total_price,
+      user: user._id
     }
 
-    const order = new orderModel(orderObject)
-    order
-      .save()
-      .then((result) => {
-        return res.status(201).json({ status: true, data: result })
-      })
-      .catch((err) => {
-        res.status(500)
-        console.log('Error creating order', err.message)
-        return res.json({ error: 'Error creating order' })
-      })
+    const order = new Order(orderObject)
+    const savedOrder = await order.save()
+
+    user.orders = user.orders.concat(savedOrder._id)
+    await user.save()
+
+    return res.status(201).json({ status: true, data: savedOrder })
   } catch (err) {
     next(err)
   }
@@ -137,15 +130,10 @@ const createOrder = async (req, res, next) => {
  */
 const updateOrder = async (req, res, next) => {
   try {
-    // check for authenticated user's role
-    if (req.authenticatedUser.role !== 'admin') {
-      return res.status(401).send({ message: 'Unauthorised' })
-    }
-
     const { id } = req.params
     const { state } = req.body
 
-    const order = await orderModel.findById(id)
+    const order = await Order.findById(id)
 
     if (!order) {
       return res.status(404).json({ status: false, data: null })
@@ -171,14 +159,9 @@ const updateOrder = async (req, res, next) => {
  */
 const deleteOrder = async (req, res, next) => {
   try {
-    // check for authenticated user's role
-    if (req.authenticatedUser.role !== 'admin') {
-      return res.status(401).send({ message: 'Unauthorised' })
-    }
-
     const { id } = req.params
 
-    const order = await orderModel.findOne({ _id: id })
+    const order = await Order.findOne({ _id: id })
     const deleted = await order.remove()
     if (deleted) {
       return res.status(204).json({ status: true })

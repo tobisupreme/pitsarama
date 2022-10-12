@@ -6,22 +6,10 @@ const bcrypt = require('bcrypt')
  */
 const getAllUsers = async (req, res, next) => {
   try {
-    // check for authenticated user
-    const authenticatedUser = req.authenticatedUser
-
-    if (!authenticatedUser) {
-      return res.status(403).send({ message: 'Forbidden' })
-    }
-
-    if (authenticatedUser.role !== 'admin') {
-      return res.status(401).send({ message: 'Unauthorised' })
-    }
-
-    const users = await userModel.find({}, { username: 1, user_type: 1 })
-
+    const users = await userModel.find({}).populate('orders', { items: 1, total_price: 1 })
     return res.json({ status: true, users })
   } catch (err) {
-    return res.status(500).json({ status: false, data: err.message })
+    next(err)
   }
 }
 
