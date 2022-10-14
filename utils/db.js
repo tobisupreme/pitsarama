@@ -1,8 +1,8 @@
 const mongoose = require('mongoose')
 
-module.exports = () => {
+module.exports = (URI) => {
   mongoose
-    .connect(process.env.URI)
+    .connect(URI)
     .then(() => {
       console.log('Connection to MongoDB successful')
     })
